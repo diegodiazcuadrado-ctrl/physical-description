@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Describing People – Scrambled Sentences (A1)</title>
+  <style>
+    :root{
+      --bg:#f7f7fb;--card:#ffffff;--ink:#111827;--muted:#6b7280;--accent:#2563eb;--good:#16a34a;--bad:#dc2626;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Inter,Arial,sans-serif;background:var(--bg);color:var(--ink)}
+    .wrap{max-width:920px;margin:auto;padding:24px}
+    header{display:flex;gap:12px;align-items:center;justify-content:space-between;margin-bottom:16px}
+    h1{font-size:clamp(18px,2.5vw,24px);margin:0;font-weight:700}
+    .progress{font-size:14px;color:var(--muted)}
+    .card{background:var(--card);border-radius:18px;box-shadow:0 10px 30px rgba(0,0,0,.06);padding:18px}
+
+    .prompt{font-size:15px;color:var(--muted);margin-bottom:10px}
+
+    .areas{display:grid;grid-template-columns:1fr;gap:14px}
+
+    .zone{min-height:64px;border:2px dashed #d1d5db;border-radius:14px;padding:12px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:#f9fafb}
+    .zone.target{background:#eef2ff;border-color:#c7d2fe}
+
+    .token{display:inline-flex;align-items:center;justify-content:center;padding:10px 14px;border-radius:12px;border:1px solid #e5e7eb;background:#fff;cursor:grab;font-weight:600;user-select:none;transition:.15s transform,.15s box-shadow}
+    .token[draggable="true"]:active{transform:scale(.98)}
+    .token.used{opacity:.5}
+
+    .controls{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}
+    button{border:0;background:var(--accent);color:white;font-weight:700;border-radius:12px;padding:10px 14px;cursor:pointer}
+    button.ghost{background:#e5e7eb;color:#111827}
+    button.soft{background:#dbeafe;color:#1e40af}
+    button.good{background:var(--good)}
+    button.bad{background:var(--bad)}
+
+    .feedback{margin-top:10px;font-weight:700}
+    .hint{background:#fff7ed;border-left:4px solid #fb923c;padding:8px 10px;border-radius:8px;margin-top:10px;color:#7c2d12}
+
+    .footer{display:flex;justify-content:space-between;align-items:center;margin-top:16px}
+
+    /* responsive */
+    @media (min-width:720px){
+      .areas{grid-template-columns:1fr}
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Scrambled Sentences – Describing People (A1)</h1>
+      <div class="progress" id="progress">1 / 10</div>
+    </header>
+
+    <div class="card">
+      <div class="prompt">Drag the words to build the sentence. You can also <strong>click</strong> a word to move it. Use <em>Check</em>, then go <em>Next</em>.</div>
+
+      <div class="areas">
+        <div class="zone" id="pool" aria-label="Word bank" ></div>
+        <div class="zone target" id="build" aria-label="Your sentence" ></div>
+      </div>
+
+      <div class="controls">
+        <button id="checkBtn">Check</button>
+        <button class="ghost" id="resetBtn" title="Return all words to the bank">Reset</button>
+        <button class="soft" id="hintBtn">Hint</button>
+        <button class="ghost" id="showBtn">Show answer</button>
+        <span style="flex:1"></span>
+        <button class="ghost" id="prevBtn">◀ Prev</button>
+        <button id="nextBtn">Next ▶</button>
+      </div>
+
+      <div class="feedback" id="feedback"></div>
+      <div class="hint" id="hint" style="display:none"></div>
+
+      <div class="footer">
+        <small id="targetText"></small>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Dataset: increasing complexity (10 items)
+    const ITEMS = [
+      { answer:["She","is","tall"],
+        scrambled:["tall","is","She"] },
+      { answer:["He","has","brown","hair"],
+        scrambled:["brown","has","He","hair"] },
+      { answer:["She","is","twenty","years","old"],
+        scrambled:["old","She","years","is","twenty"] },
+      { answer:["She","is","very","pretty"],
+        scrambled:["pretty","very","She","is"] },
+      { answer:["He","doesn't","wear","glasses",",","he","wears","contacts"],
+        scrambled:["glasses","He","wear","doesn't",",","he","wears","contacts"] },
+      { answer:["His","hair","is","very","short","and","dark"],
+        scrambled:["very","short","His","hair","and","dark","is"] },
+      { answer:["She","is","in","her","thirties"],
+        scrambled:["thirties","is","She","in","her"] },
+      { answer:["What","does","he","look","like","?"],
+        scrambled:["does","What","like","he","look","?"] },
+      { answer:["She","is","tall","with","long","brown","hair"],
+        scrambled:["long","with","hair","brown","is","She","tall"] },
+      { answer:["She","is","about","thirty-two","years","old","and","of","medium","height"],
+        scrambled:["about","and","old","years","height","She","thirty-two","of","is","medium"] },
+    ];
+
+    let index = 0; // current item
+
+    const pool = document.getElementById('pool');
+    const build = document.getElementById('build');
+    const progress = document.getElementById('progress');
+    const feedback = document.getElementById('feedback');
+    const hintBox = document.getElementById('hint');
+    const targetText = document.getElementById('targetText');
+
+    function render(){
+      progress.textContent = `${index+1} / ${ITEMS.length}`;
+      feedback.textContent = '';
+      hintBox.style.display = 'none';
+      hintBox.textContent = '';
+      pool.innerHTML = '';
+      build.innerHTML = '';
+
+      // Create tokens in the pool
+      const words = [...ITEMS[index].scrambled];
+      words.forEach((w,i)=>pool.appendChild(makeToken(w)));
+      targetText.textContent = `Target words: ${ITEMS[index].answer.length}`;
+    }
+
+    function makeToken(text){
+      const el = document.createElement('div');
+      el.className = 'token';
+      el.draggable = true;
+      el.textContent = text;
+      el.setAttribute('data-word', text);
+      el.addEventListener('dragstart', dragStart);
+      el.addEventListener('click', ()=>moveToken(el));
+      return el;
+    }
+
+    function moveToken(token){
+      if(token.parentElement === pool){
+        build.appendChild(token);
+      }else{
+        pool.appendChild(token);
+      }
+    }
+
+    // Drag and Drop handlers
+    [pool, build].forEach(zone=>{
+      zone.addEventListener('dragover', e=>{e.preventDefault();});
+      zone.addEventListener('drop', e=>{
+        e.preventDefault();
+        const id = e.dataTransfer.getData('text/plain');
+        const token = document.getElementById(id);
+        if(token) zone.appendChild(token);
+      });
+    });
+
+    function dragStart(e){
+      const id = 'tok_' + Math.random().toString(36).slice(2);
+      e.target.id = id;
+      e.dataTransfer.setData('text/plain', id);
+    }
+
+    function normalize(tokens){
+      // Join tokens into a string with proper spacing around punctuation
+      const noSpaceBefore = new Set([',','?','.',':',';','!']);
+      let out = '';
+      tokens.forEach((t,i)=>{
+        if(i===0){ out += t; return; }
+        if(noSpaceBefore.has(t)) out += t; else out += ' ' + t;
+      });
+      return out;
+    }
+
+    function currentAnswerTokens(){
+      return Array.from(build.querySelectorAll('.token')).map(t=>t.getAttribute('data-word'));
+    }
+
+    function check(){
+      const user = currentAnswerTokens();
+      const target = ITEMS[index].answer;
+      if(user.length !== target.length){
+        feedback.textContent = 'Not finished yet — keep going!';
+        feedback.style.color = '#b45309';
+        return;
+      }
+      const ok = user.every((w,i)=>w===target[i]);
+      if(ok){
+        feedback.textContent = '✅ Great! Correct sentence.';
+        feedback.style.color = 'var(--good)';
+      }else{
+        feedback.textContent = '❌ Some words are in the wrong order. Try again!';
+        feedback.style.color = 'var(--bad)';
+      }
+    }
+
+    function hint(){
+      const built = currentAnswerTokens();
+      const target = ITEMS[index].answer;
+      const next = built.length; // next position
+      const correctWord = target[next];
+      if(correctWord===undefined){
+        hintBox.textContent = 'You already placed all words. Press Check!';
+      } else {
+        hintBox.textContent = `Hint: the next word is “${correctWord}”.`;
+        // move the first matching token from pool
+        const token = Array.from(pool.children).find(el=>el.getAttribute('data-word')===correctWord);
+        if(token) build.appendChild(token);
+      }
+      hintBox.style.display = 'block';
+    }
+
+    function showAnswer(){
+      build.innerHTML = '';
+      ITEMS[index].answer.forEach(w=>build.appendChild(makeToken(w)));
+      feedback.textContent = '✅ Answer shown.';
+      feedback.style.color = 'var(--good)';
+    }
+
+    function reset(){ render(); }
+
+    // Button bindings
+    document.getElementById('checkBtn').onclick = check;
+    document.getElementById('hintBtn').onclick = hint;
+    document.getElementById('showBtn').onclick = showAnswer;
+    document.getElementById('resetBtn').onclick = reset;
+
+    document.getElementById('prevBtn').onclick = ()=>{ index = (index-1+ITEMS.length)%ITEMS.length; render(); };
+    document.getElementById('nextBtn').onclick = ()=>{ index = (index+1)%ITEMS.length; render(); };
+
+    // Keyboard helper: Enter = Check, Arrow keys = Prev/Next
+    window.addEventListener('keydown', (e)=>{
+      if(e.key==='Enter') check();
+      if(e.key==='ArrowRight') { index = (index+1)%ITEMS.length; render(); }
+      if(e.key==='ArrowLeft') { index = (index-1+ITEMS.length)%ITEMS.length; render(); }
+    });
+
+    // Initialize
+    render();
+  </script>
+</body>
+</html>
